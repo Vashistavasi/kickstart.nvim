@@ -26,6 +26,9 @@ return {
 
     -- JavaScript / TypeScript debugging
     'mxsdev/nvim-dap-vscode-js',
+
+    -- Java LSP and DAP integration
+    'mfussenegger/nvim-jdtls',
   },
   keys = {
     -- Basic debugging keymaps, feel free to change to your liking!
@@ -99,6 +102,8 @@ return {
       ensure_installed = {
         -- Update this to ensure that you have the debuggers for the langs you want
         'delve',
+        'java-debug-adapter',
+        'java-test',
         'bash',
         'js',
       },
@@ -194,10 +199,10 @@ return {
         cwd = '${fileDirname}',
         pathBashdb = bashdb_script,
         pathBashdbLib = bash_package_root,
-        pathBash = exe_or 'bash',
-        pathCat = exe_or 'cat',
-        pathMkfifo = exe_or 'mkfifo',
-        pathPkill = exe_or 'pkill',
+        pathBash = exe_or('bash'),
+        pathCat = exe_or('cat'),
+        pathMkfifo = exe_or('mkfifo'),
+        pathPkill = exe_or('pkill'),
         env = {},
         args = {},
         terminalKind = 'integrated',
@@ -285,5 +290,87 @@ return {
     end
 
     setup_typescript_debug()
+
+    ---------------------------------------------------------------------------
+    -- 🧩 Java DAP + JDTLS Setup
+    ---------------------------------------------------------------------------
+    -- Install Java debug adapters automatically
+    ---------------------------------------------------------------------------
+    -- Java Debugging (Unified Project + Standalone Mode)
+    ---------------------------------------------------------------------------
+    local function setup_java_debug()
+      local ok, jdtls = pcall(require, 'jdtls')
+      if not ok then
+        vim.notify('nvim-jdtls not found, skipping Java setup', vim.log.levels.WARN)
+        return
+      end
+
+      local root_markers = { 'pom.xml', 'build.gradle', '.git' }
+      local root_dir = require('jdtls.setup').find_root(root_markers)
+      local standalone = (not root_dir or root_dir == '')
+
+      local java_debug_jar = vim.fn.glob(mason_path .. '/packages/java-debug-adapter/extension/server/com.microsoft.java.debug.plugin-*.jar', 1)
+      local java_test_jars = vim.split(vim.fn.glob(mason_path .. '/packages/java-test/extension/server/*.jar', 1), '\n')
+      local bundles = { java_debug_jar }
+      vim.list_extend(bundles, java_test_jars)
+
+      if standalone then
+        -------------------------------------------------------------------
+        -- ⚡ Standalone Java (no project)
+        -------------------------------------------------------------------
+        vim.notify('☕ Standalone Java mode (no Maven/Gradle)', vim.log.levels.INFO)
+
+        dap.adapters.java = { type = 'executable', command = mason_path .. '/bin/jdtls' }
+        dap.configurations.java = {
+          {
+            type = 'java',
+            request = 'launch',
+            name = 'Run current Java file',
+            mainClass = function()
+              return vim.fn.expand '%:t:r'
+            end,
+            projectName = 'standalone',
+            cwd = vim.fn.expand '%:p:h',
+            console = 'integratedTerminal',
+          },
+        }
+
+        vim.keymap.set('n', '<leader>jc', function()
+          require('dap').continue()
+        end, { desc = 'Run Java file (standalone)' })
+      else
+        -------------------------------------------------------------------
+        -- 🧩 Project Mode (JDTLS LSP + DAP)
+        -------------------------------------------------------------------
+        vim.notify('☕ JDTLS Project mode enabled for: ' .. root_dir, vim.log.levels.INFO)
+        local workspace = vim.fn.expand '~/.cache/jdtls/workspace/' .. vim.fn.fnamemodify(root_dir, ':p:h:t')
+        local config = {
+          cmd = { mason_path .. '/bin/jdtls', '-data', workspace },
+          root_dir = root_dir,
+          init_options = { bundles = bundles },
+          settings = {
+            java = {
+              autobuild = { enabled = false },
+              project = { resourceFilters = { 'node_modules', '.git' } },
+              import = { gradle = { enabled = true }, maven = { enabled = true } },
+            },
+          },
+        }
+        jdtls.start_or_attach(config)
+
+        -- JUnit test keymaps
+        vim.keymap.set('n', '<leader>dj', function()
+          require('jdtls').test_class()
+        end, { desc = 'Debug Java Test Class' })
+        vim.keymap.set('n', '<leader>dn', function()
+          require('jdtls').test_nearest_method()
+        end, { desc = 'Debug Nearest Java Test' })
+      end
+    end
+
+    vim.api.nvim_create_autocmd('FileType', {
+      pattern = 'java',
+      callback = setup_java_debug,
+    })
   end,
 }

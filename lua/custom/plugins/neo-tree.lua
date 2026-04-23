@@ -1,5 +1,6 @@
-return {
-  {
+  return {
+    
+    {
     'nvim-neo-tree/neo-tree.nvim',
     branch = 'v3.x',
     dependencies = {
@@ -108,10 +109,10 @@ return {
       end
 
       require('neo-tree').setup(config)
-      vim.keymap.set('n', '\\', '<cmd>Neotree reveal<CR>', { desc = 'NeoTree reveal', silent = true })
+      --      vim.keymap.set('n', '<leader>e', ':Neotree toggle<CR>', { desc = 'Toggle file tree' })
       vim.keymap.set('n', '<leader>e', function()
         neotree.execute { toggle = true, position = 'left', reveal = true }
       end, { desc = 'Toggle Neo-tree (focus tree when open)' })
     end,
-  },
+  }
 }
